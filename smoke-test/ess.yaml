@@ -1,0 +1,14 @@
+agent_name: "ESS smoke test"
+schemas:
+  - "cr3a3_employeeselfservice"
+  - "msdyn_employeeselfservice"
+  - "msdyn_employeeselfservicecore"
+  - "msdyn_employeeselfservicehr"
+  - "msdyn_employeeselfserviceit"
+
+email:
+  recipients:
+    - "smoke-test@example.com"
+  subject: "ESS smoke test"
+
+output_dir: "./smoke-out"

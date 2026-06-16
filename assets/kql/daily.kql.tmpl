@@ -1,0 +1,27 @@
+// Per-cluster daily-series query for an agent-adoption report.
+// Variables substituted by agent_adoption_report.pipeline.render_kql -- see main.kql.tmpl.
+
+let _schemas = dynamic({{SCHEMA_LIST_JSON}});
+let _today   = startofday(now());
+
+TraceEvents
+| where env_time > _today - {{MEDIUM_DAYS}}d and env_time <= _today
+| where applicationName == "{{APPLICATION_NAME}}" and serviceName == "{{SERVICE_NAME}}"
+| where activityName == "{{ACTIVITY_NAME}}"
+| where customDimensions has_any ({{SCHEMA_HAS_ANY}})
+   and customDimensions has '"ActivityType":"message"'
+| extend Schema    = tostring(extract_json("$.BotSchemaName",  customDimensions))
+| where Schema in (_schemas)
+| extend ChannelId = tostring(extract_json("$.ChannelId",      customDimensions))
+| extend convId    = tostring(extract_json("$.ConversationId", customDimensions))
+| extend Surface = case(
+    ChannelId == "m365copilot",                 "Copilot",
+    ChannelId == "pva-published-engine-direct", "Web client",
+                                                "Others")
+| extend Day = startofday(env_time)
+| summarize messages      = count(),
+            conversations = dcount(convId),
+            users         = dcount(principalObjectId),
+            tenants       = dcount(principalTenantId)
+            by Day, Surface
+| order by Day asc, Surface asc

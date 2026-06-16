@@ -1,0 +1,78 @@
+# =============================================================================
+# agent-adoption-report :: example config
+# Copy this file, rename to <agent>-config.yaml, edit the marked sections and
+# run:
+#     python -m agent_adoption_report.cli all --config <agent>-config.yaml
+#
+# Required fields:
+#   agent_name, schemas, email.recipients
+# Everything else has defaults. Point the `kusto:` block at your own ADX/Kusto
+# clusters and database; the placeholder values below will not resolve as-is.
+# =============================================================================
+
+# ---- REQUIRED ---------------------------------------------------------------
+agent_name: "ESS"             # used in chart titles, email headlines, subject
+schemas:                       # exact BotSchemaName values (Kusto has_any match)
+  - "cr3a3_employeeselfservice"
+  - "msdyn_employeeselfservice"
+  - "msdyn_employeeselfservicecore"
+  - "msdyn_employeeselfservicehr"
+  - "msdyn_employeeselfserviceit"
+
+email:
+  recipients:
+    - "you@example.com"
+    - "your-lead@example.com"
+  subject: "ESS adoption -- weekly portfolio update"
+  # from_address: "shared-alias@example.com"   # optional
+
+# ---- OPTIONAL: time windows -------------------------------------------------
+# All in calendar days, aligned to whole UTC days (today excluded). The
+# pipeline derives:
+#   short_label       = "{short_days}d"           e.g. "7d"
+#   medium_label      = "{medium_days}d"          e.g. "20d"
+#   long_label        = "{long_days}d"            e.g. "28d"   (MAU)
+#   quarter_label     = "{quarter_days}d"         e.g. "90d"   (QAU)
+#   prev_short_label  = "prev{short_days}d"       e.g. "prev7d"
+# Both `short` and `prev_short` windows cover SHORT_DAYS complete UTC days,
+# which is what makes the WoW delta comparable.
+windows:
+  short_days:   7
+  medium_days: 20
+  long_days:   28
+  quarter_days: 90
+
+# ---- OPTIONAL: output directory --------------------------------------------
+# Resolved relative to this config file. JSON, PNG and HTML all land here.
+output_dir: "out"
+
+# ---- OPTIONAL: leaderboard tuning ------------------------------------------
+top_n_per_cluster: 30   # tenants kept per region before merging (Kusto-side)
+top_n_leaderboard: 10   # tenants shown in the email "Top customers" table
+
+# Map tenant id (lowercase GUID) -> friendly label shown in the leaderboard.
+# Add the customers you want recognised; everything else falls back to the
+# masked GUID.
+known_tenants:
+  "72f988bf-86f1-41af-91ab-2d7cd011db47": "Microsoft (corp)"
+  # "00000000-0000-0000-0000-000000000000": "Contoso"
+
+# Tenant ids to drop from the leaderboard entirely (sandbox, test, internal
+# replays). The pipeline also auto-excludes anything that looks like a bot
+# (>=1000 messages from <=5 users), so this is for known-bad GUIDs only.
+exclude_from_leaderboard:
+  - "00000000-0000-0000-0000-000000000001"  # example sandbox tenant
+  - "00000000-0000-0000-0000-000000000002"  # example test tenant
+
+# ---- OPTIONAL: Kusto overrides ---------------------------------------------
+# Point these at your own ADX/Kusto telemetry. Replace every placeholder below.
+kusto:
+  aad_tenant:        "72f988bf-86f1-41af-91ab-2d7cd011db47"
+  database:          "YourDatabase"
+  application_name:  "fabric:/YourAgent.Platform"
+  service_name:      "RuntimeService"
+  activity_name:     "YourBotActivityEvent"
+  # List your regional clusters explicitly (recommended):
+  clusters:
+    - { name: "US",     uri: "https://your-adx-us.<region>.kusto.windows.net" }
+    - { name: "EU-WEU", uri: "https://your-adx-eu.<region>.kusto.windows.net" }

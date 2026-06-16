@@ -1,0 +1,25 @@
+# --- Local, secret-bearing config (never commit) ---
+*.local.json
+tenant-config.json
+recipients.json
+tenant-name-map.json
+tenant-model-map.json
+
+# --- Generated artifacts ---
+email*.html
+*.png
+bot-scope-*.json
+region-rollup.json
+tenant-wow.json
+smoke-test/smoke-out/
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db

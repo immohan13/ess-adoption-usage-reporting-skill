@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy this file to recipients.local.json (git-ignored) and fill in your real distribution list. Alternatively set $env:ADOPTION_REPORT_RECIPIENTS / $env:ADOPTION_REPORT_SUBJECT, or pass -To / -Subject to send_email.ps1. 'to' is a semicolon-separated address list.",
+  "to": "you@example.com; your-lead@example.com",
+  "subject": "Agent Adoption & Usage report -- WoW trend, top customers, new customers & models in use"
+}

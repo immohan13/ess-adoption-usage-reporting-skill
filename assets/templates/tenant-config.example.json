@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy this file to tenant-config.local.json (git-ignored) and fill in your real values. known_tenants maps a tenant GUID to a display name shown in the Top customers leaderboard; exclude_from_leaderboard suppresses internal test/sandbox tenants from the leaderboard (they still count in portfolio totals). All GUIDs are matched case-insensitively. The placeholder GUIDs below are fake examples.",
+  "known_tenants": {
+    "72f988bf-86f1-41af-91ab-2d7cd011db47": "Microsoft (corp)",
+    "00000000-0000-0000-0000-000000000001": "Contoso Ltd (Prod)",
+    "00000000-0000-0000-0000-000000000002": "Fabrikam Inc",
+    "00000000-0000-0000-0000-000000000003": "Northwind Traders"
+  },
+  "exclude_from_leaderboard": [
+    "00000000-0000-0000-0000-0000000000aa",
+    "00000000-0000-0000-0000-0000000000bb"
+  ],
+  "flagship_a_label": "Flagship customer A",
+  "flagship_b_label": "Flagship customer B"
+}

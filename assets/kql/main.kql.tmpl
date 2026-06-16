@@ -1,0 +1,113 @@
+// Per-cluster main query for an agent-adoption report.
+// Variables substituted by agent_adoption_report.pipeline.render_kql:
+//   {{SCHEMA_LIST_JSON}}    -- JSON array of BotSchemaName strings, e.g. ["foo","bar"]
+//   {{SCHEMA_HAS_ANY}}      -- comma-separated quoted list for `has_any (...)`, e.g. "foo","bar"
+//   {{APPLICATION_NAME}}    -- e.g. "fabric:/YourAgent.Platform"
+//   {{SERVICE_NAME}}        -- e.g. "RuntimeService"
+//   {{ACTIVITY_NAME}}       -- e.g. "YourBotActivityEvent"
+//   {{SHORT_DAYS}}          -- short window (default 7)
+//   {{MEDIUM_DAYS}}         -- medium window (default 20)
+//   {{LONG_DAYS}}           -- long window (default 28)
+//   {{QUARTER_DAYS}}        -- quarter window for QAU (default 90)
+//   {{PREV_END_DAYS}}       -- end of prev-short window in days, == SHORT_DAYS * 2
+//   {{PREV_QUARTER_END_DAYS}} -- end of prev-quarter window in days, == QUARTER_DAYS * 2
+//   {{TOP_N_PER_CLUSTER}}   -- per-cluster top N for the TenantAgg section (default 30)
+//
+// Returns one table with columns: Section, Window, Surface, messages, conversations, users, Schema.
+// Sections: Windows (short / medium / long / quarter / prev-short), Schema, TenantSurface, TenantAgg, UserHealth.
+//
+// Windows are aligned to whole UTC days and EXCLUDE today (which is partial), so the current
+// short window and the previous short window cover the same number of complete days. This is
+// what makes WoW deltas comparable.
+
+let _schemas = dynamic({{SCHEMA_LIST_JSON}});
+let _today   = startofday(now());
+
+let _base =
+    TraceEvents
+    | where env_time > _today - {{PREV_QUARTER_END_DAYS}}d and env_time <= _today
+    | where applicationName == "{{APPLICATION_NAME}}" and serviceName == "{{SERVICE_NAME}}"
+    | where activityName == "{{ACTIVITY_NAME}}"
+    | where customDimensions has_any ({{SCHEMA_HAS_ANY}})
+       and customDimensions has '"ActivityType":"message"'
+    | extend Schema     = tostring(extract_json("$.BotSchemaName",  customDimensions))
+    | where Schema in (_schemas)
+    | extend ChannelId  = tostring(extract_json("$.ChannelId",      customDimensions))
+    | extend convId     = tostring(extract_json("$.ConversationId", customDimensions))
+    | extend Surface = case(
+        ChannelId == "m365copilot",                 "Copilot",
+        ChannelId == "pva-published-engine-direct", "Web client",
+                                                    "Others");
+
+let _rows = materialize(_base);
+
+let _windowedRange = (startDaysBack:int, endDaysBack:int, label:string) {
+    _rows
+    | where env_time > _today - startDaysBack * 1d
+       and env_time <= _today - endDaysBack * 1d
+    | summarize turns = count() by Surface, convId, principalObjectId
+    | summarize messages = sum(turns), conversations = dcount(convId), users = dcount(principalObjectId) by Surface
+    | extend Window = label
+    | union (
+        _rows | where env_time > _today - startDaysBack * 1d
+                 and env_time <= _today - endDaysBack * 1d
+        | summarize turns = count() by convId, principalObjectId
+        | summarize Surface = "TOTAL", messages = sum(turns), conversations = dcount(convId), users = dcount(principalObjectId)
+        | extend Window = label
+      )
+};
+
+let _windows =
+    union
+      (_windowedRange({{SHORT_DAYS}},    0, "{{SHORT_DAYS}}d")),
+      (_windowedRange({{MEDIUM_DAYS}},   0, "{{MEDIUM_DAYS}}d")),
+      (_windowedRange({{LONG_DAYS}},     0, "{{LONG_DAYS}}d")),
+      (_windowedRange({{QUARTER_DAYS}},  0, "{{QUARTER_DAYS}}d")),
+      (_windowedRange({{PREV_END_DAYS}}, {{SHORT_DAYS}}, "prev{{SHORT_DAYS}}d")),
+      (_windowedRange({{PREV_QUARTER_END_DAYS}}, {{QUARTER_DAYS}}, "prev{{QUARTER_DAYS}}d"))
+    | extend Section="Windows", Schema=""
+    | project Section, Window, Surface, messages, conversations, users, Schema;
+
+let _schemaSplit =
+    _rows
+    | where env_time > _today - {{MEDIUM_DAYS}}d and env_time <= _today
+    | summarize messages = count(),
+                tenants  = dcount(principalTenantId)
+                by Schema
+    | extend Section="Schema", Window="{{MEDIUM_DAYS}}d", Surface="", conversations = tenants, users = 0
+    | project Section, Window, Surface, messages, conversations, users, Schema;
+
+let _tenantsPerSurface =
+    _rows
+    | where env_time > _today - {{MEDIUM_DAYS}}d and env_time <= _today
+    | summarize tenants = dcount(principalTenantId), users = dcount(principalObjectId), messages = count() by Surface
+    | extend Section="TenantSurface", Window="{{MEDIUM_DAYS}}d", Schema=""
+    | project Section, Window, Surface, messages, conversations=tenants, users, Schema;
+
+let _tenantAgg =
+    _rows
+    | where env_time > _today - {{MEDIUM_DAYS}}d and env_time <= _today
+    | summarize perSurfaceMsgs = count(), users = dcount(principalObjectId) by principalTenantId, Surface
+    | summarize messages = sum(perSurfaceMsgs),
+                users    = sum(users),
+                dominantSurface = tostring(arg_max(perSurfaceMsgs, Surface))
+                by principalTenantId
+    | top {{TOP_N_PER_CLUSTER}} by messages desc
+    | extend Section="TenantAgg", Window="{{MEDIUM_DAYS}}d", Surface=tostring(principalTenantId)
+    | project Section, Window, Surface, messages, conversations=users, users, Schema=dominantSurface;
+
+let _userMetrics =
+    _rows
+    | where env_time <= _today
+    | extend Bucket = case(env_time > _today - {{SHORT_DAYS}}d,    "Curr",
+                           env_time > _today - {{PREV_END_DAYS}}d, "Prev",
+                                                                   "Older")
+    | summarize buckets = make_set(Bucket) by principalObjectId
+    | summarize
+        wauCurr = countif(set_has_element(buckets, "Curr")),
+        returnedFromPrev = countif(set_has_element(buckets, "Curr") and set_has_element(buckets, "Prev"))
+    | extend Section="UserHealth", Window="curr_v_prev", Surface="", Schema=""
+    | project Section, Window, Surface, messages=wauCurr, conversations=returnedFromPrev, users=tolong(0), Schema;
+
+union _windows, _schemaSplit, _tenantsPerSurface, _tenantAgg, _userMetrics
+| order by Section asc, Window asc, messages desc
