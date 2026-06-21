@@ -118,6 +118,17 @@ if _TENANT_WOW_FILE.exists():
     except Exception:
         TENANT_WEEKLY = {}
 
+# Per-tenant cadence (avg active days/week per weekly-active user) from tenant-cadence.json.
+# Used to add a Cadence column to the Top customers leaderboard. Loads gracefully if absent.
+TENANT_CADENCE: dict[str, float] = {}
+_TENANT_CADENCE_FILE = ROOT / "tenant-cadence.json"
+if _TENANT_CADENCE_FILE.exists():
+    try:
+        TENANT_CADENCE = {k.lower(): float(v) for k, v in json.loads(
+            _TENANT_CADENCE_FILE.read_text(encoding="utf-8")).get("tenant_cadence", {}).items()}
+    except Exception:
+        TENANT_CADENCE = {}
+
 SURFACES = ["Web client", "Copilot", "MCS Test Chat", "Others"]
 
 def load_rows(p: Path) -> list[dict]:
@@ -318,6 +329,7 @@ def _top10_render(rows: list[dict], sort_key: str, caption: str) -> str:
             "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Users (28d)</th>"
             "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>WoW users</th>"
             "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Msg / user</th>"
+            "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Cadence</th>"
             "<th style='text-align:left;padding:6px 10px;border:1px solid #ddd'>Dominant surface</th>"
             "<th style='text-align:left;padding:6px 10px;border:1px solid #ddd'>GPT model</th>"
             "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Share of msgs</th></tr>")
@@ -360,6 +372,9 @@ def _top10_render(rows: list[dict], sort_key: str, caption: str) -> str:
         _wk = TENANT_WEEKLY.get(tid.lower(), {})
         msg_wow_cell  = _wow_cell(_wk.get("cur_msgs", 0),  _wk.get("prev_msgs", 0))  if _wk else "&ndash;"
         user_wow_cell = _wow_cell(_wk.get("cur_users", 0), _wk.get("prev_users", 0)) if _wk else "&ndash;"
+        # Per-tenant cadence (avg active days/week per weekly-active user) from tenant-cadence.json.
+        _cad = TENANT_CADENCE.get(tid.lower())
+        cad_cell = f"{_cad:.1f} d/wk" if _cad else "&ndash;"
         body.append(
             f"<tr><td style='padding:6px 10px;border:1px solid #ddd'>{i}</td>"
             f"<td style='padding:6px 10px;border:1px solid #ddd'>{tenant_cell}</td>"
@@ -368,6 +383,7 @@ def _top10_render(rows: list[dict], sort_key: str, caption: str) -> str:
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{users:,}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{user_wow_cell}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{mpu:,.1f}</td>"
+            f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{cad_cell}</td>"
             f"<td style='padding:6px 10px;border:1px solid #ddd'>{dom_surface}</td>"
             f"<td style='padding:6px 10px;border:1px solid #ddd'>{model_cell}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{share:.1f}%</td></tr>"

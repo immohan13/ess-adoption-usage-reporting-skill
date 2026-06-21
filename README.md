@@ -14,7 +14,8 @@ For your agent, across all 13 PVA Runtime regions:
 4. **Tenants per schema** -- horizontal bar
 5. **Regional footprint** -- per-region table + horizontal bar of msg share
 6. **Top customers leaderboard** -- top N by message volume, with friendly
-   tenant names, auto-excluding bot/automation traffic
+   tenant names, a per-tenant **Cadence** column (avg active days/week per
+   weekly-active user), auto-excluding bot/automation traffic
 7. **Schema split** and **surface footprint** (Copilot / web client / others)
 
 All charts are embedded as base64 PNGs in a single self-contained `email.html`
