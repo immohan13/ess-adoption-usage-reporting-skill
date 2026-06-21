@@ -129,10 +129,15 @@ def merge_tenant_surface(all_rows: list[dict], medium_label: str) -> list[dict]:
     return list(keys.values())
 
 
-def merge_tenant_agg(all_rows: list[dict], medium_label: str, cap: int) -> list[dict]:
+def merge_tenant_agg(all_rows: list[dict], medium_label: str, cap: int,
+                     cadence_map: dict[str, dict] | None = None,
+                     cadence_cap_days: int = 7) -> list[dict]:
     """Aggregate per-tenant across regions, return top-`cap` globally as Section='Top10'.
     `cap` is intentionally larger than the leaderboard size so the email builder
-    can filter exclusions and still have at least N rows to show."""
+    can filter exclusions and still have at least N rows to show.
+
+    If `cadence_map` is given (tid -> {user_days, wau}), each row gets a `cadence`
+    field = user_days / wau, clamped to [0, cadence_cap_days]."""
     by_tid: dict[str, dict] = {}
     for r in all_rows:
         if r.get("Section") != "TenantAgg":
@@ -157,6 +162,11 @@ def merge_tenant_agg(all_rows: list[dict], medium_label: str, cap: int) -> list[
     for r in rows:
         dominant_surface = max(r["surfaces"].items(), key=lambda kv: kv[1])[0] if r["surfaces"] else ""
         dominant_region  = max(r["regions"].items(),  key=lambda kv: kv[1])[0] if r["regions"] else ""
+        cadence = None
+        if cadence_map:
+            cm = cadence_map.get(r["TenantId"])
+            if cm and cm.get("wau"):
+                cadence = round(min(cm["user_days"] / cm["wau"], float(cadence_cap_days)), 2)
         out.append({
             "Section": "Top10",
             "Window": medium_label,
@@ -165,10 +175,30 @@ def merge_tenant_agg(all_rows: list[dict], medium_label: str, cap: int) -> list[
             "conversations": r["users"],
             "users": r["users"],
             "Schema": dominant_surface,
+            "cadence": cadence,
             "_Region": dominant_region,
             "_RegionMsgs": dict(sorted(r["regions"].items(), key=lambda kv: -kv[1])),
         })
     return out
+
+
+def merge_tenant_cadence(all_rows: list[dict]) -> dict[str, dict]:
+    """Sum per-tenant short-window user-days and WAU across regions.
+
+    Returns {tenant_id_lower: {"user_days": int, "wau": int}}. Tenants typically
+    home to one cluster, so summing across regions is safe in practice (same
+    cross-cluster overcount caveat the rest of the report carries)."""
+    by_tid: dict[str, dict] = {}
+    for r in all_rows:
+        if r.get("Section") != "TenantCadence":
+            continue
+        tid = (r.get("Surface") or "").lower()
+        if not tid:
+            continue
+        d = by_tid.setdefault(tid, {"user_days": 0, "wau": 0})
+        d["user_days"] += int(r.get("messages") or 0)
+        d["wau"]       += int(r.get("conversations") or 0)
+    return by_tid
 
 
 def merge_user_health(all_rows: list[dict]) -> list[dict]:
@@ -320,8 +350,11 @@ def run(cfg: ReportConfig, from_cache: bool = False) -> dict:
     windows = merge_windows(all_rows)
     schema  = merge_schema(all_rows, cfg.windows.medium_label)
     ten_sur = merge_tenant_surface(all_rows, cfg.windows.medium_label)
+    cadence_map = merge_tenant_cadence(all_rows)
     top_n   = merge_tenant_agg(all_rows, cfg.windows.medium_label,
-                               cap=max(cfg.top_n_leaderboard * 3, 25))
+                               cap=max(cfg.top_n_leaderboard * 3, 25),
+                               cadence_map=cadence_map,
+                               cadence_cap_days=cfg.windows.short_days)
     uh      = merge_user_health(all_rows)
     daily   = merge_daily(daily_by_region)
     rollup  = region_rollup(all_rows, daily_by_region, cfg.windows.short_label)
@@ -348,11 +381,12 @@ def run(cfg: ReportConfig, from_cache: bool = False) -> dict:
     for r in top_n:
         b_rows.append({"Section": "Top10", "Window": r["Window"], "Surface": r["Surface"],
                        "messages": r["messages"], "conversations": r["conversations"],
-                       "users": r["users"], "Schema": r["Schema"]})
+                       "users": r["users"], "Schema": r["Schema"], "cadence": r.get("cadence")})
 
     cols = ["Section", "Window", "Surface", "messages", "conversations", "users", "Schema"]
+    b_cols = cols + ["cadence"]
     dump_v2(a_rows, out / "report-windows.json", cols)
-    dump_v2(b_rows, out / "report-tables.json",  cols)
+    dump_v2(b_rows, out / "report-tables.json",  b_cols)
     dump_v2(daily, out / "report-daily.json",
             ["Day", "Surface", "messages", "conversations", "users", "tenants"])
 

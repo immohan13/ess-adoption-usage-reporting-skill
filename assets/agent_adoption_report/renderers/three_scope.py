@@ -218,6 +218,22 @@ def _merge_tenant_names(cfg_known: dict[str, str], data_dir: Path) -> dict[str, 
     return out
 
 
+def _load_cadence(data_dir: Path) -> dict[str, float]:
+    """Load per-tenant cadence (avg active days/week per weekly-active user) from
+    `tenant-cadence.json` in the data dir, if present. Shape:
+        {"tenant_cadence": {"<tenantId>": 3.5, ...}}
+    Returns {tenant_id_lower: cadence_float}; empty dict when the file is absent
+    so the Cadence column simply renders as "&ndash;"."""
+    p = data_dir / "tenant-cadence.json"
+    if not p.exists():
+        return {}
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        return {k.lower(): float(v) for k, v in (raw.get("tenant_cadence") or {}).items()}
+    except Exception:
+        return {}
+
+
 # ---------------------------------------------------------------------------
 # Image inlining (palette-quantized PNG -> base64)
 # ---------------------------------------------------------------------------
@@ -330,8 +346,10 @@ def _schema_table(all_b_rows: list[dict]) -> str:
     )
 
 
-def _top10_render(rows: list[dict], sort_key: str, caption: str, names: dict[str, str]) -> str:
+def _top10_render(rows: list[dict], sort_key: str, caption: str, names: dict[str, str],
+                  cadence: dict[str, float] | None = None) -> str:
     rows = sorted(rows, key=lambda x: -(x.get(sort_key) or 0))
+    cadence = cadence or {}
     total_msgs = sum(r["messages"] for r in rows) or 1
     head = (
         "<tr style='background:#f3f3f3'>"
@@ -340,6 +358,7 @@ def _top10_render(rows: list[dict], sort_key: str, caption: str, names: dict[str
         "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Messages (20d)</th>"
         "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Users (20d)</th>"
         "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Msg / user</th>"
+        "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Cadence</th>"
         "<th style='text-align:left;padding:6px 10px;border:1px solid #ddd'>Dominant surface</th>"
         "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Share of msgs</th></tr>"
     )
@@ -358,12 +377,15 @@ def _top10_render(rows: list[dict], sort_key: str, caption: str, names: dict[str
         tenant_cell = f"<code>{_short_id(tid)}</code>"
         if label:
             tenant_cell = f"<b>{label}</b> &middot; {tenant_cell}"
+        _cad = cadence.get(tid.lower())
+        cad_cell = f"{_cad:.1f} d/wk" if _cad else "&ndash;"
         body.append(
             f"<tr><td style='padding:6px 10px;border:1px solid #ddd'>{i}</td>"
             f"<td style='padding:6px 10px;border:1px solid #ddd'>{tenant_cell}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{r['messages']:,}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{users:,}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{mpu:,.1f}</td>"
+            f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{cad_cell}</td>"
             f"<td style='padding:6px 10px;border:1px solid #ddd'>{dom_surface}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{share:.1f}%</td></tr>"
         )
@@ -375,7 +397,8 @@ def _top10_render(rows: list[dict], sort_key: str, caption: str, names: dict[str
     return f"<h4 style='margin:14px 0 6px 0;color:#1f4e79'>{caption}</h4>" + table
 
 
-def _top10_table(all_b_rows: list[dict], exclude: set[str], names: dict[str, str]) -> str:
+def _top10_table(all_b_rows: list[dict], exclude: set[str], names: dict[str, str],
+                 cadence: dict[str, float] | None = None) -> str:
     raw = [r for r in all_b_rows if r.get("Section") == "Top10"]
     if not raw:
         return ""
@@ -411,8 +434,8 @@ def _top10_table(all_b_rows: list[dict], exclude: set[str], names: dict[str, str
             "not real customer adoption. "
             "Bot/automation = &lt;=5 distinct users but &gt;=1,000 messages (test harnesses, not real adoption).</i></p>"
         )
-    by_msgs = _top10_render(keep[:], "messages", "Sorted by messages (20d)", names)
-    by_users = _top10_render(keep[:], "users", "Sorted by distinct users (20d)", names)
+    by_msgs = _top10_render(keep[:], "messages", "Sorted by messages (20d)", names, cadence)
+    by_users = _top10_render(keep[:], "users", "Sorted by distinct users (20d)", names, cadence)
     return excl_summary + by_msgs + by_users
 
 
@@ -556,6 +579,7 @@ def build(cfg) -> Path:
     region_data = json.loads(paths["REGION"].read_text(encoding="utf-8"))
 
     names = _merge_tenant_names(cfg.known_tenants, data_dir)
+    cadence = _load_cadence(data_dir)
     exclude = set(cfg.exclude_from_leaderboard)
 
     # ---- WoW per scope -------------------------------------------------------
@@ -611,7 +635,7 @@ def build(cfg) -> Path:
     nonus_msg_share = 100.0 - us_msg_share
 
     tbl_schema = _schema_table(all_b)
-    tbl_top10 = _top10_table(all_b, exclude, names)
+    tbl_top10 = _top10_table(all_b, exclude, names, cadence)
     tbl_surface = _tenant_surface_table(all_b)
 
     def _share_of(scope_msgs, all_msgs):
@@ -739,7 +763,7 @@ Per-region rollup of the regional Kusto clusters where agent activity lands. Cus
 
 <h3 style="margin:18px 0 6px">Top customers by 20-day message volume</h3>
 {tbl_top10}
-<p style="font-size:12px;color:#666;margin:6px 0 0 0">Tenant IDs partially masked. Two views &mdash; sorted by total messages and by distinct users &mdash; so we can see both heavy-volume tenants and broad-user-base tenants. Anonymous traffic (no tenant id), known test / sandbox tenants, and bot/automation rows are excluded; see the note above the tables for what was filtered.</p>
+<p style="font-size:12px;color:#666;margin:6px 0 0 0">Tenant IDs partially masked. Two views &mdash; sorted by total messages and by distinct users &mdash; so we can see both heavy-volume tenants and broad-user-base tenants. Anonymous traffic (no tenant id), known test / sandbox tenants, and bot/automation rows are excluded; see the note above the tables for what was filtered.<br/><b>Cadence</b> = average active days per week per weekly-active user (sum of daily distinct users over the last 7 days &divide; 7-day distinct users); higher = users come back on more days. Shown as &ndash; when no <code>tenant-cadence.json</code> is present in the data dir.</p>
 
 <h3 style="margin:18px 0 6px">Schema split across the portfolio (20d)</h3>
 {tbl_schema}

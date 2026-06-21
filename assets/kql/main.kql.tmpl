@@ -14,7 +14,8 @@
 //   {{TOP_N_PER_CLUSTER}}   -- per-cluster top N for the TenantAgg section (default 30)
 //
 // Returns one table with columns: Section, Window, Surface, messages, conversations, users, Schema.
-// Sections: Windows (short / medium / long / quarter / prev-short), Schema, TenantSurface, TenantAgg, UserHealth.
+// Sections: Windows (short / medium / long / quarter / prev-short), Schema, TenantSurface, TenantAgg,
+//           UserHealth, TenantCadence.
 //
 // Windows are aligned to whole UTC days and EXCLUDE today (which is partial), so the current
 // short window and the previous short window cover the same number of complete days. This is
@@ -109,5 +110,27 @@ let _userMetrics =
     | extend Section="UserHealth", Window="curr_v_prev", Surface="", Schema=""
     | project Section, Window, Surface, messages=wauCurr, conversations=returnedFromPrev, users=tolong(0), Schema;
 
-union _windows, _schemaSplit, _tenantsPerSurface, _tenantAgg, _userMetrics
+// Per-tenant cadence over the short window: how many days a week an active user
+// shows up. userDays = sum over days of the daily distinct-user count; wau =
+// distinct users across the whole short window. cadence = userDays / wau is
+// computed at merge time (so the cross-region HLL sums stay consistent).
+//   messages       = userDays
+//   conversations  = wau
+// Limited to the per-cluster top-N tenants by userDays to bound the result.
+let _tenantCadence =
+    _rows
+    | where env_time > _today - {{SHORT_DAYS}}d and env_time <= _today
+    | extend Day = startofday(env_time)
+    | summarize dayUsers = dcount(principalObjectId) by principalTenantId, Day
+    | summarize userDays = sum(dayUsers) by principalTenantId
+    | join kind=inner (
+        _rows
+        | where env_time > _today - {{SHORT_DAYS}}d and env_time <= _today
+        | summarize wau = dcount(principalObjectId) by principalTenantId
+      ) on principalTenantId
+    | top {{TOP_N_PER_CLUSTER}} by userDays desc
+    | extend Section="TenantCadence", Window="{{SHORT_DAYS}}d", Surface=tostring(principalTenantId)
+    | project Section, Window, Surface, messages=userDays, conversations=wau, users=tolong(0), Schema="";
+
+union _windows, _schemaSplit, _tenantsPerSurface, _tenantAgg, _userMetrics, _tenantCadence
 | order by Section asc, Window asc, messages desc

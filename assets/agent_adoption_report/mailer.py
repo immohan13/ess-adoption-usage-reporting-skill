@@ -395,6 +395,7 @@ def _top_customer_table(b_rows: list[dict], cfg: ReportConfig) -> tuple[str, lis
             "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Messages</th>"
             "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Users</th>"
             "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Msg / user</th>"
+            "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Cadence</th>"
             "<th style='text-align:left;padding:6px 10px;border:1px solid #ddd'>Dominant surface</th>"
             "<th style='text-align:right;padding:6px 10px;border:1px solid #ddd'>Share</th></tr>")
     body = []
@@ -407,12 +408,15 @@ def _top_customer_table(b_rows: list[dict], cfg: ReportConfig) -> tuple[str, lis
         tenant_cell = f"<code>{_short_id(tid)}</code>"
         if label:
             tenant_cell = f"<b>{label}</b> &middot; {tenant_cell}"
+        cad = r.get("cadence")
+        cad_cell = f"{cad:.1f} d/wk" if cad else "&ndash;"
         body.append(
             f"<tr><td style='padding:6px 10px;border:1px solid #ddd'>{i}</td>"
             f"<td style='padding:6px 10px;border:1px solid #ddd'>{tenant_cell}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{r['messages']:,}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{users:,}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{mpu:,.1f}</td>"
+            f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{cad_cell}</td>"
             f"<td style='padding:6px 10px;border:1px solid #ddd'>{r.get('Schema') or ''}</td>"
             f"<td style='text-align:right;padding:6px 10px;border:1px solid #ddd'>{share:.1f}%</td></tr>"
         )
@@ -567,6 +571,10 @@ Tenants are routed to one home cluster, so message/user/tenant counts are additi
 
 <h3 style="margin:18px 0 6px">Top {cfg.top_n_leaderboard} customers by message volume ({medium_lbl})</h3>
 {top_html}
+<p style="font-size:12px;color:#666;margin:6px 0 10px 0">
+<i>Cadence</i> = average active days per week per weekly-active user (sum of daily distinct users over
+the last {short_lbl} &divide; {short_lbl} distinct users); higher = users come back on more days.
+</p>
 {excl_block}
 
 <h3 style="margin:18px 0 6px">Schema split ({medium_lbl})</h3>

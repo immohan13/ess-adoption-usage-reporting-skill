@@ -11,6 +11,7 @@ email*.html
 bot-scope-*.json
 region-rollup.json
 tenant-wow.json
+tenant-cadence.json
 smoke-test/smoke-out/
 
 # --- Python ---
