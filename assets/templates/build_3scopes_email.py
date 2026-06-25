@@ -863,6 +863,48 @@ def main():
         for m, n in sorted(_model_counts.items(), key=lambda x: -x[1])
     ) if _model_counts else "&mdash;"
 
+    # ---- Leadership model-adoption summary (call-weighted share + adopter counts) ---
+    # Classify by raw model_id so newer "internal preview" labels (e.g. GPT-5.x) are
+    # counted in the right family even before they get a friendly display name.
+    def _fam(mid: str) -> str:
+        mid = (mid or "").lower()
+        if mid.startswith("gpt-41"):
+            return "4.1"
+        if mid.startswith("gpt-5"):
+            return "5"
+        if mid.startswith("gpt-35"):
+            return "3.5"
+        return "other"
+    _tot_calls = _g41_calls = _g5_calls = 0.0
+    _n_dom5 = _n_any5 = 0
+    for _v in MODEL_MAP.values():
+        _mid = (_v or {}).get("model_id")
+        if not _mid:
+            continue
+        if _fam(_mid) == "5":
+            _n_dom5 += 1
+        _c = float((_v or {}).get("calls") or 0)
+        _has5 = False
+        for _m_id, _sh in (_v or {}).get("mix", []):
+            _f = _fam(_m_id)
+            _tot_calls += _c * _sh
+            if _f == "4.1":
+                _g41_calls += _c * _sh
+            elif _f == "5":
+                _g5_calls += _c * _sh
+                if _sh > 0:
+                    _has5 = True
+        if _has5:
+            _n_any5 += 1
+    _g41_share = (100.0 * _g41_calls / _tot_calls) if _tot_calls else 0.0
+    _g5_share = (100.0 * _g5_calls / _tot_calls) if _tot_calls else 0.0
+    model_headline_html = (
+        f"GPT-4.1 remains the default, serving <b>~{_g41_share:.0f}% of all model calls</b>. "
+        f"<b>{_n_dom5}</b> customers now run a "
+        f"<span style='color:#8e24aa;font-weight:600'>GPT-5</span>-class model as their primary and "
+        f"<b>{_n_any5}</b> have GPT-5 in their mix (~{_g5_share:.0f}% of calls)."
+    )
+
     whats_new = f"""
 <div style="margin:10px 0 4px 0;padding:12px 16px;background:#f4f8fc;border:1px solid #d6e4f0;border-radius:6px">
 <p style="margin:0 0 8px 0;font-weight:700;color:#1f4e79;font-size:15px">&#128226; What&rsquo;s new this week</p>
@@ -895,6 +937,7 @@ Reply with the metrics, cuts, or customers you&rsquo;d like to see and we&rsquo;
 <li><b>~{all_msgs28:,} employee messages and ~{all_mau:,} monthly active users across ~{distinct_tenants_total:,} customers in the last 28 days</b> &mdash; spanning <b>{regions_with_traffic} geographies</b> (Americas, Europe and rest of world). ESS is live and at scale globally.</li>
 <li><b>A small number of customers drive most of the usage.</b> {FLAGSHIP_B} and {FLAGSHIP_A} together account for a large share of the last 28 days of messages; a long tail of ~{max(distinct_tenants_total - 2, 100)}+ smaller customers makes up the rest.</li>
 <li><b>Microsoft 365 Copilot is the most popular way employees reach ESS.</b> Embedded web experiences and Teams / other channels make up the remainder &mdash; see the surface footprint table below for the exact split.</li>
+<li><b>Models in use:</b> {model_headline_html}</li>
 </ul>
 
 <h2 style="color:#1f4e79;margin-top:24px">Daily trend</h2>

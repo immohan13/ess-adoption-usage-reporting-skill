@@ -85,14 +85,20 @@ let _tenantsPerSurface =
     | extend Section="TenantSurface", Window="{{MEDIUM_DAYS}}d", Schema=""
     | project Section, Window, Surface, messages, conversations=tenants, users, Schema;
 
+// users = dcount(principalObjectId) per tenant ACROSS all surfaces (true distinct
+// MAU), not a sum of per-surface dcounts -- so a person using >1 surface is counted
+// once. Dominant surface is derived from a separate per-surface message tally and
+// joined back in.
+let _tenantDom =
+    _rows
+    | where env_time > _today - {{MEDIUM_DAYS}}d and env_time <= _today
+    | summarize perSurfaceMsgs = count() by principalTenantId, Surface
+    | summarize dominantSurface = tostring(arg_max(perSurfaceMsgs, Surface)) by principalTenantId;
 let _tenantAgg =
     _rows
     | where env_time > _today - {{MEDIUM_DAYS}}d and env_time <= _today
-    | summarize perSurfaceMsgs = count(), users = dcount(principalObjectId) by principalTenantId, Surface
-    | summarize messages = sum(perSurfaceMsgs),
-                users    = sum(users),
-                dominantSurface = tostring(arg_max(perSurfaceMsgs, Surface))
-                by principalTenantId
+    | summarize messages = count(), users = dcount(principalObjectId) by principalTenantId
+    | join kind=leftouter (_tenantDom) on principalTenantId
     | top {{TOP_N_PER_CLUSTER}} by messages desc
     | extend Section="TenantAgg", Window="{{MEDIUM_DAYS}}d", Surface=tostring(principalTenantId)
     | project Section, Window, Surface, messages, conversations=users, users, Schema=dominantSurface;
