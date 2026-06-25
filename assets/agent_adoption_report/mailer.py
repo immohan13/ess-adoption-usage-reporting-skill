@@ -7,6 +7,7 @@ into Outlook.
 from __future__ import annotations
 import base64
 import json
+import re as _re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -135,7 +136,9 @@ def _daily_by_day(daily_rows: list[dict]) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for r in daily_rows:
         d = (r.get("Day") or "")[:10]
-        if not d:
+        # Require a date-shaped Day; skip stray non-date rows (e.g. a Kusto
+        # diagnostic/'Exceptions' row) that would later break date parsing.
+        if not _re.match(r"^\d{4}-\d{2}-\d{2}$", d):
             continue
         b = out.setdefault(d, {"messages": 0, "users": 0})
         b["messages"] += int(r.get("messages") or 0)

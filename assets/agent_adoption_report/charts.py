@@ -29,7 +29,12 @@ def _region_color(name: str) -> str:
 
 
 def _parse_day(s):
-    return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+    """Parse a Day string to a date; return None for non-date values
+    (e.g. a stray Kusto diagnostic/'Exceptions' row that leaked into the rows)."""
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00")).date()
+    except (ValueError, TypeError):
+        return None
 
 
 # ---- 1. Daily trend (messages + DAU) -------------------------------------
@@ -42,7 +47,9 @@ def plot_trend(cfg: ReportConfig) -> Path:
 
     by_day: dict = {}
     for r in rows:
-        d = _parse_day(r["Day"])
+        d = _parse_day(r.get("Day"))
+        if d is None:
+            continue
         bucket = by_day.setdefault(d, {"messages": 0, "users": 0})
         bucket["messages"] += int(r.get("messages") or 0)
         bucket["users"]    += int(r.get("users")    or 0)
