@@ -920,7 +920,9 @@ def main():
 <tr><td style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222">
 <p>Hi everyone,</p>
 <p>Here&rsquo;s this week&rsquo;s <b>ESS Adoption &amp; Usage report</b> &mdash; one read on how ESS is
-being adopted and used across all our customers.</p>
+being adopted and used across all our customers. If this email was forwarded to you and you&rsquo;d like to be
+included going forward, please join
+<a href="https://idwebelements.microsoft.com/GroupManagement.aspx?Group=essadoption&amp;Operation=join">ESS Adoption Reports</a>.</p>
 
 {whats_new}
 
