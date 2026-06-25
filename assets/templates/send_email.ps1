@@ -55,7 +55,7 @@ if (-not $To -and $localCfg) { $To = $localCfg.to }
 if (-not $Subject) { $Subject = $env:ADOPTION_REPORT_SUBJECT }
 if (-not $Subject -and $localCfg) { $Subject = $localCfg.subject }
 if (-not $Subject) {
-    $Subject = 'Agent Adoption & Usage report -- WoW trend, top customers, new customers & models in use'
+    $Subject = "Agent Adoption & Usage Report - $(Get-Date -Format 'M/d')"
 }
 
 if (-not $To) {

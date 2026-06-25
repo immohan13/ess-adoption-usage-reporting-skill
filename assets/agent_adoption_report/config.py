@@ -149,7 +149,7 @@ class ReportConfig:
             raise SystemExit("config.email.recipients must list at least one address")
         email = EmailConfig(
             recipients=list(recipients),
-            subject=eraw.get("subject", f"{raw['agent_name']} adoption report"),
+            subject=eraw.get("subject", f"{raw['agent_name']} Adoption & Usage Report"),
             from_address=eraw.get("from_address"),
         )
 

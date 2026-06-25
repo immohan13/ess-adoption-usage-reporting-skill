@@ -23,7 +23,7 @@ email:
   recipients:
     - "you@example.com"
     - "your-lead@example.com"
-  subject: "ESS adoption -- weekly portfolio update"
+  subject: "ESS Adoption & Usage Report - 6/25"
   # from_address: "shared-alias@example.com"   # optional
 
 # ---- OPTIONAL: time windows -------------------------------------------------

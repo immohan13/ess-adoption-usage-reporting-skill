@@ -37,7 +37,7 @@ foreach ($ln in $yamlLines) {
     if (-not $subject   -and $ln -match '^\s*subject:\s*"?(.+?)"?\s*$')    { $subject   = $matches[1].Trim('"') }
     if (-not $outputDir -and $ln -match '^\s*output_dir:\s*"?(.+?)"?\s*$') { $outputDir = $matches[1].Trim('"') }
 }
-if (-not $subject)   { $subject = "Agent adoption report" }
+if (-not $subject)   { $subject = "Agent Adoption & Usage Report - $(Get-Date -Format 'M/d')" }
 if (-not $outputDir) { $outputDir = 'out' }
 if (-not [System.IO.Path]::IsPathRooted($outputDir)) {
     $outputDir = Join-Path $cfgDir $outputDir
